@@ -1,0 +1,98 @@
+name: Issue intake
+
+run-name: Issue intake by @${{ github.actor }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue_title:
+        description: Issue title
+        required: true
+        type: string
+      issue_description:
+        description: Full issue description
+        required: true
+        type: string
+      tags:
+        description: Optional comma-separated labels (for example: security-incident, bug)
+        required: false
+        type: string
+
+permissions:
+  issues: write
+
+jobs:
+  create-issue:
+    name: Create and assign issue
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create issue, labels, and notify assignees
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const inputs = context.payload.inputs ?? {};
+            const title = String(inputs.issue_title ?? "").trim();
+            const description = String(inputs.issue_description ?? "").trim();
+            const rawTags = String(inputs.tags ?? "");
+
+            if (!title) {
+              core.setFailed("Issue title is required.");
+              return;
+            }
+            if (!description) {
+              core.setFailed("Issue description is required.");
+              return;
+            }
+            if (title.length > 256) {
+              core.setFailed("Issue title must be 256 characters or fewer.");
+              return;
+            }
+
+            const labels = [...new Set(rawTags.split(",").map(tag => tag.trim()).filter(Boolean))];
+            if (labels.length > 10) {
+              core.setFailed("Enter no more than 10 comma-separated labels.");
+              return;
+            }
+            if (labels.some(label => label.length > 50)) {
+              core.setFailed("Each label must be 50 characters or fewer.");
+              return;
+            }
+
+            for (const name of labels) {
+              try {
+                await github.rest.issues.getLabel({ owner, repo, name });
+              } catch (error) {
+                if (error.status !== 404) throw error;
+                await github.rest.issues.createLabel({
+                  owner,
+                  repo,
+                  name,
+                  color: "ededed",
+                  description: "Created by the Issue intake workflow"
+                });
+              }
+            }
+
+            const assignees = ["mayurchaudhari-cyber", "ProwlSec"];
+            const body =
+              description +
+              "\n\n---\n**Assigned for follow-up:** " +
+              assignees.map(login => "@" + login).join(" ");
+
+            const { data: issue } = await github.rest.issues.create({
+              owner,
+              repo,
+              title,
+              body,
+              labels,
+              assignees
+            });
+
+            await core.summary
+              .addHeading("Issue created")
+              .addLink(issue.title, issue.html_url)
+              .addRaw("\nAssigned to @mayurchaudhari-cyber and @ProwlSec.")
+              .write();
+
+            core.notice(`Created ${issue.html_url}`);
