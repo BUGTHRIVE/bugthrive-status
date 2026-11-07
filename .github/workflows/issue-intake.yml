@@ -14,7 +14,7 @@ on:
         required: true
         type: string
       tags:
-        description: Optional comma-separated labels (for example: security-incident, bug)
+        description: "Optional comma-separated labels (for example: security-incident, bug)"
         required: false
         type: string
 
